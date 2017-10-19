@@ -16,7 +16,7 @@ r_url=r'<dt class="ptitle"><br><a href="(.*?html)"'
 r_title=r'<meta name="citation_title" content="(.*?)">'
 r_author=r'<meta name="citation_author" content="(.*?)">'
 r_official_pdf='<meta name="citation_pdf_url" content="(.*?pdf)">'
-r_abstract='<br><br><div id="abstract" >(.*?)</div>'
+r_abstract='<br><br><div id="abstract" >([\s\S]*?)</div>'
 r_arxiv='[<a href="(.*?)">arXiv</a>]'
 
 def check_name(name):
@@ -52,9 +52,10 @@ def get_all_papers(use_mp=True):
             results.append(mp.apply_async(Paper,(url,)))
         mp.close()
         mp.join()
-        return {p.title:p for p in [result.get() for result in results]}
+        papers_list=[result.get() for result in results]
     else:
-        return {p.title:p for p in [Paper(url) for url in urls]}
+        papers_list=[Paper(url) for url in urls]
+    return papers_list,{p.title:p for p in papers_list}
 
 def doload_papers(papers,root='',use_mp=True):
     if use_mp:
@@ -66,7 +67,8 @@ def doload_papers(papers,root='',use_mp=True):
         mp.join()
         num_official,num_arxiv=tuple(np.array([result.get() for result in results]).sum(0))
         print('Downloaded {} official version papers and {} arxiv version'.format(num_official,num_arxiv))
-        
+        return num_official,num_arxiv
+    
 class Paper():
     def __init__(self,url):
         self.url_paper=url
@@ -85,13 +87,14 @@ class Paper():
                 self.text=self.res.text
                 
                 self.url_official_pdf=re.findall(r_official_pdf,self.text)[0]
-                self.title=re.findall(r_title,self.text)
+                self.title=re.findall(r_title,self.text)[0]
                 self.abstract=re.findall(r_abstract,self.text)[0]
                 self.authors=re.findall(r_author,self.text)
                 self.check_arxiv()
-                print('Title:\n{}\nAuthors:{}\n\n'.format(self.title,','.join(self.authors)))
+                print('Title:\n{}\nAuthors:{}\n'.format(self.title,','.join(self.authors)))
                 self.available=True
                 self.ed_official,self.ed_arxiv=False,False
+                state=True
             else:
                 Warning('Initing paper from {} failed'.format(self.url_paper))
                 self.available=False
@@ -167,3 +170,11 @@ class Paper():
             
         if self.url_arxiv_abs:
             self.url_arxiv_pdf=self.url_arxiv_abs.replace('abs','pdf')
+
+if __name__=='__main__':
+    root = (sys.argv[1] if len(sys.argv)>1 else 'Papers')
+    if not os.path.exists(root):
+        os.mkdir(root)
+    papers_list,papers_dict=get_all_papers(use_mp=True)
+    result=doload_papers(papers_list,root,use_mp=True)
+
